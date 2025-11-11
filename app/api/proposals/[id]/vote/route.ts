@@ -1,17 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
-
-// Share proposals data (in production, use a real database)
-const proposals: any[] = []
-const votes: Map<string, string[]> = new Map()
+import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const supabase = await createClient()
     const proposalId = params.id
-    const body = await request.json()
-    const userId = body.userId || `user-${Math.random().toString(36).substr(2, 9)}`
 
-    const proposal = proposals.find((p) => p.id === proposalId)
-    if (!proposal) {
+    const clientIp =
+      request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown"
+
+    // Check if proposal exists
+    const { data: proposal, error: proposalError } = await supabase
+      .from("proposals")
+      .select("*")
+      .eq("id", proposalId)
+      .single()
+
+    if (proposalError || !proposal) {
       return NextResponse.json(
         {
           success: false,
@@ -21,8 +26,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       )
     }
 
-    const proposalVotes = votes.get(proposalId) || []
-    if (proposalVotes.includes(userId)) {
+    const { data: existingVote, error: voteCheckError } = await supabase
+      .from("votes")
+      .select("*")
+      .eq("proposal_id", proposalId)
+      .eq("voter_ip", clientIp)
+      .single()
+
+    if (existingVote) {
       return NextResponse.json(
         {
           success: false,
@@ -32,16 +43,32 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       )
     }
 
-    proposalVotes.push(userId)
-    votes.set(proposalId, proposalVotes)
-    proposal.votes = proposalVotes.length
+    const { error: insertError } = await supabase.from("votes").insert([
+      {
+        proposal_id: proposalId,
+        voter_ip: clientIp,
+        vote_value: 1,
+      },
+    ])
+
+    if (insertError) throw insertError
+
+    const { data: updatedProposal, error: updateError } = await supabase
+      .from("proposals")
+      .update({ votes_count: (proposal.votes_count || 0) + 1 })
+      .eq("id", proposalId)
+      .select()
+      .single()
+
+    if (updateError) throw updateError
 
     return NextResponse.json({
       success: true,
       message: "Stem opgeteld",
-      data: proposal,
+      data: updatedProposal,
     })
   } catch (error) {
+    console.error("[v0] Error voting:", error)
     return NextResponse.json(
       {
         success: false,

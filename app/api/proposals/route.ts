@@ -1,58 +1,81 @@
 import { type NextRequest, NextResponse } from "next/server"
-
-// In-memory database for MVP (replace with real DB later)
-const proposals: any[] = []
-const votes: Map<string, string[]> = new Map()
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {
-  const province = request.nextUrl.searchParams.get("province")
-  const facility = request.nextUrl.searchParams.get("facility")
+  try {
+    const supabase = await createClient()
+    const province = request.nextUrl.searchParams.get("province")
+    const facility = request.nextUrl.searchParams.get("facility")
+    const municipality = request.nextUrl.searchParams.get("municipality")
 
-  let filtered = proposals
+    let query = supabase.from("proposals").select("*").eq("status", "active").order("votes_count", { ascending: false })
 
-  if (province) {
-    filtered = filtered.filter((p) => p.province === province)
+    if (municipality) {
+      query = query.eq("municipality_id", municipality)
+    }
+    if (facility) {
+      query = query.eq("facility_type", facility)
+    }
+
+    const { data, error } = await query
+
+    if (error) throw error
+
+    return NextResponse.json({
+      success: true,
+      data: data || [],
+      total: data?.length || 0,
+    })
+  } catch (error) {
+    console.error("[v0] Error fetching proposals:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Fout bij ophalen voorstellen",
+      },
+      { status: 500 },
+    )
   }
-  if (facility) {
-    filtered = filtered.filter((p) => p.facilityType === facility)
-  }
-
-  return NextResponse.json({
-    success: true,
-    data: filtered,
-    total: filtered.length,
-  })
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient()
     const body = await request.json()
 
-    const proposal = {
-      id: `prop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: body.title,
-      description: body.description,
-      province: body.province,
-      municipality: body.municipality,
-      facilityType: body.facilityType,
-      action: body.action, // 'add' or 'remove'
-      createdAt: new Date().toISOString(),
-      votes: 0,
-      status: "active",
-    }
+    const clientIp =
+      request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown"
 
-    proposals.push(proposal)
-    votes.set(proposal.id, [])
+    const { data, error } = await supabase
+      .from("proposals")
+      .insert([
+        {
+          municipality_id: body.municipality_id,
+          municipality_name: body.municipality_name,
+          title: body.title,
+          description: body.description,
+          proposal_type: body.proposal_type,
+          facility_type: body.facility_type,
+          estimated_cost: body.estimated_cost || 0,
+          annual_maintenance: body.annual_maintenance || 0,
+          created_by_ip: clientIp,
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) throw error
 
     return NextResponse.json(
       {
         success: true,
         message: "Voorstel ingediend",
-        data: proposal,
+        data,
       },
       { status: 201 },
     )
   } catch (error) {
+    console.error("[v0] Error creating proposal:", error)
     return NextResponse.json(
       {
         success: false,

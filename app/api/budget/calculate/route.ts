@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
 
-// Facility costs in thousands of euros per year
 const FACILITY_COSTS = {
   school: {
     setup: 5000,
@@ -12,17 +12,17 @@ const FACILITY_COSTS = {
     annual: 15000,
     description: "Ziekenhuisafdeling",
   },
-  policeStation: {
+  police_station: {
     setup: 2000,
     annual: 1500,
     description: "Politiebureau",
   },
-  doctorClinic: {
+  doctor: {
     setup: 500,
     annual: 400,
     description: "Huisartsenpraktijk",
   },
-  asylumCenter: {
+  asylum_center: {
     setup: 3000,
     annual: 8000,
     description: "Asielcentrum (120 plaatsen)",
@@ -31,8 +31,9 @@ const FACILITY_COSTS = {
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient()
     const body = await request.json()
-    const { facilities, baseBudget } = body
+    const { facilities, baseBudget, municipality_id } = body
 
     let totalSetupCost = 0
     let totalAnnualCost = 0
@@ -56,8 +57,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const remainingBudget = baseBudget - totalAnnualCost // Corrected variable name
+    const remainingBudget = baseBudget - totalAnnualCost
     const isFeasible = remainingBudget >= 0
+
+    if (municipality_id) {
+      const clientIp =
+        request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown"
+
+      await supabase.from("budget_simulations").insert([
+        {
+          municipality_id,
+          total_budget: baseBudget,
+          facilities_json: facilities,
+          user_ip: clientIp,
+        },
+      ])
+    }
 
     return NextResponse.json({
       success: true,
@@ -71,6 +86,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
+    console.error("[v0] Error calculating budget:", error)
     return NextResponse.json(
       {
         success: false,
