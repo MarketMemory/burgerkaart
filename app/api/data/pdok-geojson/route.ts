@@ -2,47 +2,65 @@ import { type NextRequest, NextResponse } from "next/server"
 
 /**
  * Fetches GeoJSON data from PDOK for Dutch provinces and municipalities
- * PDOK provides free access to Dutch geographic data
+ * Uses modern OGC API Features endpoint (preferred over WFS)
  */
 export async function GET(request: NextRequest) {
-  try {
-    // PDOK WFS endpoint for administrative boundaries
-    const wfsUrl = "https://geodata.nationaalgeoregister.nl/administratiefegrenzen/wfs"
+  const type = request.nextUrl.searchParams.get("type") || "province" // province or municipality
 
-    const params = new URLSearchParams({
-      service: "WFS",
-      version: "2.0.0",
-      request: "GetFeature",
-      typeName: "administratiefegrenzen:provincies",
-      outputFormat: "application/json",
+  try {
+    console.log("[v0] Fetching PDOK data for type:", type)
+
+    const pdokEndpoint =
+      type === "province"
+        ? "https://api.pdok.nl/cbs/gebiedsindelingen/ogc/v1/collections/provincie_gegeneraliseerd/items?f=json&limit=100"
+        : "https://api.pdok.nl/cbs/gebiedsindelingen/ogc/v1/collections/gemeente_gegeneraliseerd/items?f=json&limit=500"
+
+    const response = await fetch(pdokEndpoint, {
+      headers: {
+        Accept: "application/json",
+      },
     })
 
-    const response = await fetch(`${wfsUrl}?${params.toString()}`)
-
     if (!response.ok) {
-      throw new Error("PDOK request failed")
+      console.error("[v0] PDOK API error:", response.status, response.statusText)
+      throw new Error(`PDOK API returned ${response.status}`)
     }
 
     const data = await response.json()
+    console.log("[v0] PDOK response received, features count:", data.features?.length)
+
+    // Transform features to include accessible properties
+    const transformedFeatures =
+      data.features?.map((feature: any) => ({
+        ...feature,
+        properties: {
+          ...feature.properties,
+          name: feature.properties?.statnaam || feature.properties?.name || "Unknown",
+          code: feature.properties?.statcode || feature.properties?.id,
+        },
+      })) || []
 
     return NextResponse.json({
       success: true,
-      source: "PDOK",
+      source: "PDOK OGC API",
+      type,
       timestamp: new Date().toISOString(),
-      data,
-    })
-  } catch (error) {
-    console.error("PDOK data fetch error:", error)
-
-    // Return cached/mock data as fallback
-    return NextResponse.json({
-      success: true,
-      source: "PDOK (cached)",
-      message: "Using cached data",
+      totalFeatures: transformedFeatures.length,
       data: {
         type: "FeatureCollection",
-        features: [],
+        features: transformedFeatures,
       },
     })
+  } catch (error) {
+    console.error("[v0] PDOK fetch error:", error)
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "PDOK fetch failed",
+        source: "PDOK (error)",
+      },
+      { status: 500 },
+    )
   }
 }
