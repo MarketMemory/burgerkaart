@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { AlertTriangle, TrendingUp, Building2, Users, DollarSign } from "lucide-react"
+import PDFExportButton from "./pdf-export-button"
 
 interface MunicipalityProfileProps {
   municipality: string
@@ -28,10 +29,12 @@ export default function MunicipalityProfile({ municipality, stats, facilities, l
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-foreground mb-2">{municipality}</h1>
-        <p className="text-muted-foreground">Statistieken, problemen en voorstellen voor verbetering</p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-4xl font-bold text-foreground mb-2">{municipality}</h1>
+          <p className="text-muted-foreground">Statistieken, problemen en voorstellen voor verbetering</p>
+        </div>
+        <PDFExportButton municipality={municipality} stats={stats} facilities={facilities} />
       </div>
 
       {/* Statistics Overview */}

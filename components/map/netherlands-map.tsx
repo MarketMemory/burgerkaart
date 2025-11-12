@@ -1,122 +1,191 @@
 "use client"
 
-import { useEffect, useRef } from "react"
-import L from "leaflet"
-import "leaflet/dist/leaflet.css"
+import { useState } from "react"
+import { LAYER_CONFIG, getColorByProblem, type MapLayer } from "@/lib/map-utils"
+import LayerToggle from "./layer-toggle"
 
 interface NetherlandsMapProps {
   selectedRegion: string | null
   onRegionSelect: (region: string) => void
 }
 
-// GeoJSON data for Netherlands provinces (simplified)
-const NETHERLANDS_GEOJSON = {
-  type: "FeatureCollection",
-  features: [
-    {
-      type: "Feature",
-      properties: { name: "Noord-Holland", problems: "Woningtekort, congestie" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [
-          [
-            [4.8, 52.8],
-            [5.2, 52.8],
-            [5.2, 52.4],
-            [4.8, 52.4],
-            [4.8, 52.8],
-          ],
-        ],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Zuid-Holland", problems: "Infrastructuur, overstromingsrisico" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [
-          [
-            [4.2, 52.2],
-            [4.8, 52.2],
-            [4.8, 51.6],
-            [4.2, 51.6],
-            [4.2, 52.2],
-          ],
-        ],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Utrecht", problems: "Verkeersdruk, wooncrisis" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [
-          [
-            [4.8, 52.4],
-            [5.4, 52.4],
-            [5.4, 51.9],
-            [4.8, 51.9],
-            [4.8, 52.4],
-          ],
-        ],
-      },
-    },
-  ],
-}
+// Simplified GeoJSON data for Netherlands regions
+const NETHERLANDS_REGIONS = [
+  {
+    name: "Noord-Holland",
+    problems: "Woningtekort, congestie",
+    problemValue: 75,
+    x: 100,
+    y: 80,
+    width: 80,
+    height: 60,
+  },
+  {
+    name: "Zuid-Holland",
+    problems: "Infrastructuur, overstromingsrisico",
+    problemValue: 68,
+    x: 80,
+    y: 140,
+    width: 100,
+    height: 80,
+  },
+  {
+    name: "Utrecht",
+    problems: "Verkeersdruk, wooncrisis",
+    problemValue: 72,
+    x: 150,
+    y: 100,
+    width: 70,
+    height: 70,
+  },
+  {
+    name: "Gelderland",
+    problems: "Verkeersdrukte, stedelijke groei",
+    problemValue: 65,
+    x: 200,
+    y: 80,
+    width: 120,
+    height: 90,
+  },
+  {
+    name: "Friesland",
+    problems: "Bevolkingsdaling, voorzieningen",
+    problemValue: 58,
+    x: 120,
+    y: 20,
+    width: 100,
+    height: 60,
+  },
+  {
+    name: "Groningen",
+    problems: "Werkgelegenheid, jongerenuitstroom",
+    problemValue: 62,
+    x: 200,
+    y: 20,
+    width: 80,
+    height: 50,
+  },
+]
 
 export default function NetherlandsMap({ selectedRegion, onRegionSelect }: NetherlandsMapProps) {
-  const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<L.Map | null>(null)
+  const [layers, setLayers] = useState<Record<string, MapLayer>>(LAYER_CONFIG)
+  const [hoveredRegion, setHoveredRegion] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!mapContainer.current) return
+  const handleToggleLayer = (layerId: string) => {
+    setLayers((prev) => ({
+      ...prev,
+      [layerId]: {
+        ...prev[layerId],
+        visible: !prev[layerId].visible,
+      },
+    }))
+  }
 
-    // Initialize map
-    if (!map.current) {
-      map.current = L.map(mapContainer.current).setView([52.15, 5.0], 7)
+  return (
+    <div className="relative w-full">
+      <div
+        className="relative w-full bg-gradient-to-b from-slate-100 to-slate-50 overflow-auto"
+        style={{ minHeight: "500px" }}
+      >
+        <svg
+          viewBox="0 0 450 300"
+          className="w-full h-full"
+          style={{ maxWidth: "100%", margin: "0 auto", display: "block" }}
+        >
+          {/* Background */}
+          <rect width="450" height="300" fill="#e0f2fe" />
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-        maxZoom: 19,
-      }).addTo(map.current)
+          {/* Water */}
+          <circle cx="50" cy="80" r="30" fill="#87ceeb" opacity="0.4" />
 
-      // Add GeoJSON layer
-      L.geoJSON(NETHERLANDS_GEOJSON, {
-        style: {
-          color: "#1e40af",
-          weight: 2,
-          opacity: 0.8,
-          fillOpacity: 0.5,
-        },
-        onEachFeature: (feature, layer) => {
-          const props = feature.properties
-          const popup = L.popup().setContent(`
-            <div class="p-2">
-              <h3 class="font-bold text-sm">${props.name}</h3>
-              <p class="text-xs text-gray-600 mt-1">Problemen: ${props.problems}</p>
-              <button class="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                Details bekijken
-              </button>
-            </div>
-          `)
+          {/* Regions */}
+          {NETHERLANDS_REGIONS.map((region) => {
+            const isSelected = selectedRegion === region.name
+            const isHovered = hoveredRegion === region.name
+            const problemColor = layers.problems.visible ? getColorByProblem(region.problemValue) : "#3b82f6"
 
-          layer.bindPopup(popup)
-          layer.on("click", () => {
-            onRegionSelect(props.name)
-          })
-        },
-      }).addTo(map.current)
-    }
+            return (
+              <g key={region.name}>
+                {/* Region rectangle */}
+                <rect
+                  x={region.x}
+                  y={region.y}
+                  width={region.width}
+                  height={region.height}
+                  fill={problemColor}
+                  fillOpacity={isSelected ? 0.8 : isHovered ? 0.6 : 0.5}
+                  stroke={isSelected ? "#000" : "#666"}
+                  strokeWidth={isSelected ? 3 : 2}
+                  style={{ cursor: "pointer", transition: "all 0.2s" }}
+                  onClick={() => onRegionSelect(region.name)}
+                  onMouseEnter={() => setHoveredRegion(region.name)}
+                  onMouseLeave={() => setHoveredRegion(null)}
+                />
 
-    // Highlight selected region
-    if (selectedRegion && map.current) {
-      const bounds = L.latLngBounds([
-        [51.5, 3.4],
-        [53.5, 7.2],
-      ])
-      map.current.fitBounds(bounds)
-    }
-  }, [selectedRegion, onRegionSelect])
+                {/* Region label */}
+                <text
+                  x={region.x + region.width / 2}
+                  y={region.y + region.height / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="text-xs font-semibold pointer-events-none"
+                  fill={region.problemValue > 70 ? "#fff" : "#000"}
+                  style={{ cursor: "pointer" }}
+                >
+                  {region.name.split("-").join("\n")}
+                </text>
 
-  return <div ref={mapContainer} className="w-full h-full" style={{ minHeight: "500px" }} />
+                {/* Problem intensity badge */}
+                <rect
+                  x={region.x + region.width - 25}
+                  y={region.y + 5}
+                  width="20"
+                  height="20"
+                  fill="#fff"
+                  stroke="#999"
+                  strokeWidth="1"
+                  rx="3"
+                />
+                <text
+                  x={region.x + region.width - 15}
+                  y={region.y + 16}
+                  textAnchor="middle"
+                  className="text-xs font-bold"
+                  fill="#000"
+                >
+                  {region.problemValue}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* Layer toggle */}
+      <LayerToggle layers={layers} onToggle={handleToggleLayer} />
+
+      {/* Legend */}
+      <div className="absolute bottom-4 left-4 bg-white p-4 rounded-lg shadow-md text-xs">
+        <h4 className="font-bold mb-2">Probleemintensiteit</h4>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-red-600"></div>
+            <span>Hoog (80-100)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-orange-500"></div>
+            <span>Middel (60-79)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-yellow-400"></div>
+            <span>Laag (40-59)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-500"></div>
+            <span>Zeer laag (0-39)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
